@@ -1,6 +1,6 @@
 ---
 name: dashboard-chat-best-practices
-description: Apply dashboard-grade chat UX patterns in the Eve chat template. Use when changing chat shell layout, theme hydration, auth display hydration, signed-in/signed-out static shell behavior, optimistic messages, streaming row identity, composer/sidebar interactions, thinking/tool rendering, responsive styling, visual polish, or Vercel dashboard chat comparisons.
+description: Apply dashboard-grade chat UX patterns in the Eve chat template. Use when changing Next.js Cache Components/PPR behavior, static shell layout, Suspense bootstrap boundaries, theme hydration, auth display hydration, signed-in/signed-out static shell behavior, optimistic messages, streaming row identity, composer/sidebar interactions, thinking/tool rendering, responsive styling, visual polish, or Vercel dashboard chat comparisons.
 ---
 
 # Dashboard Chat Best Practices
@@ -15,6 +15,18 @@ Use this skill to keep the template's web chat feeling like a polished dashboard
 - Keep the aesthetic restrained and work-focused: dense but readable spacing, quiet borders, predictable controls, and minimal decoration.
 - Prefer existing shadcn/Tailwind primitives and local components over new abstractions.
 - Use icons for compact commands, with accessible labels/tooltips. Avoid explanatory in-app text for behavior that good controls can imply.
+
+## Cache Components And PPR Basics
+
+- Keep `cacheComponents: true` enabled in `next.config.ts`. Treat the chat route as a static shell with dynamic data streamed into Suspense boundaries.
+- Keep the shell cheap and deterministic. Do not make `app/(chat)/layout.tsx` wait on auth, database, chat history, or per-chat data before rendering the shell.
+- Pass cheap initial state into `AgentChatShell`: empty history, `initialNextCursor: null`, `viewer: null`, and `getInitialSetupStatus()`.
+- Load expensive or request-bound data inside hidden Suspense children: `ResolvedChatBootstrap` for setup/viewer/sidebar history and `ExistingChat` for active chat data.
+- Use sync components to hand resolved server data to the client shell. `AgentChatBootstrapSync` should update setup status, viewer, and history. `AgentChatRouteSync` should update the active chat for the current route.
+- Keep Suspense fallbacks `null` for these sync boundaries when the visible shell already has stable placeholders. Do not add loading panels that push the chat frame around.
+- Do not call `notFound()` until the dynamic boundary has enough real viewer/setup/chat data to prove the chat is inaccessible. The outer shell should still render while that decision is loading.
+- Keep root and session routes visually distinct but structurally compatible. The root page can center the composer; the session page can pin it near the bottom. Both should live inside the same shell.
+- Treat PPR/static shell work as a latency feature and a correctness feature. The goal is first paint without auth/database blocking, then precise data reconciliation after bootstrap.
 
 ## Static Shell And Hydration
 
