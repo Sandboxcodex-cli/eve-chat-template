@@ -6,7 +6,7 @@ A persisted Next.js chat template for [Eve](https://beta.eve.dev), built with sh
 
 ## Getting Started
 
-For the full local setup, storage provisioning, Sign in with Vercel credentials, and production deploy flow, see [Setup and Deployment](docs/setup-and-deploy.md).
+For the full local setup, storage provisioning, Sign in with Vercel credentials, and production deploy flow, see [Setup and Deployment](docs/setup-and-deploy.md). For the runtime architecture, streaming model, persistence flow, and extension points, see [How the Chatbot Works](docs/how-the-chatbot-works.md).
 
 Install dependencies with pnpm:
 
@@ -103,7 +103,7 @@ pnpm dev
 - Sidebar history with delete and new-chat actions
 - Vercel Connect-backed Notion MCP connection
 - Composer-level connections menu
-- Eve-generated chat titles after the first turn
+- First-message chat titles derived locally from the user's prompt
 - Streamdown markdown rendering for assistant text and reasoning
 - shadcn/Tailwind components for messages, tools, HITL prompts, and composer
 
