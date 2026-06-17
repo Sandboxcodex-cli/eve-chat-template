@@ -20,6 +20,7 @@ import {
   ChatShellProvider,
   type EnabledConnections,
 } from "@/app/_components/chat-shell-context";
+import { AuthDisplayLoggedOut } from "@/components/auth/auth-display";
 import { SignInModal } from "@/components/auth/sign-in-modal";
 import { ChatSidebar } from "@/components/chat/sidebar";
 import { Button } from "@/components/ui/button";
@@ -281,6 +282,11 @@ export function AgentChatShell({
       viewer={viewerState}
     />
   );
+  const authTopActions = (
+    <div className="pointer-events-auto mt-1 flex min-w-0 items-center justify-end gap-1.5">
+      <AuthTopActions onSignIn={() => requestSignIn()} />
+    </div>
+  );
 
   return (
     <ChatShellProvider value={contextValue}>
@@ -322,11 +328,11 @@ export function AgentChatShell({
                 </Button>
               ) : null}
             </div>
-            {!historyLoading && !viewerState ? (
-              <div className="pointer-events-auto mt-1 flex min-w-0 items-center justify-end gap-1.5">
-                <AuthTopActions onSignIn={() => requestSignIn()} />
-              </div>
-            ) : null}
+            {viewerState ? null : historyLoading ? (
+              <AuthDisplayLoggedOut>{authTopActions}</AuthDisplayLoggedOut>
+            ) : (
+              authTopActions
+            )}
           </div>
 
           {children}
