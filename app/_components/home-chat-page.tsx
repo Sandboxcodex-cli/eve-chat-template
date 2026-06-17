@@ -53,11 +53,9 @@ export function HomeChatPage() {
 
   useEffect(() => {
     if (pathname === "/") {
-      return;
+      submittingRef.current = false;
+      setSubmitting(false);
     }
-
-    submittingRef.current = false;
-    setSubmitting(false);
   }, [pathname]);
 
   useEffect(() => {
