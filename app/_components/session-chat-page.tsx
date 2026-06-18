@@ -1,6 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createChatAction } from "@/app/actions/chat";
 import {
   AgentChatSession,
   ComposerFooterControls,
@@ -14,6 +16,12 @@ import {
 } from "@/app/_components/agent-chat-events";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { ChatComposer } from "@/components/chat/composer";
+import {
+  clearPendingChatMessage,
+  isProvisionalChatId,
+  readPendingChatMessage,
+  writePendingChatMessage,
+} from "@/lib/chat/provisional-chat";
 import type { ActiveChat, SetupStatus } from "@/lib/chat/types";
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
@@ -29,7 +37,7 @@ export function SessionChatPage({
   readonly chatId: string;
   readonly children: ReactNode;
 }) {
-  const { setActiveChatId, setupStatus, viewer } = useChatShell();
+  const { setActiveChatId, setupStatus, touchChat, viewer } = useChatShell();
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
   const [draft, setDraft] = useState("");
   const [controllerReady, setControllerReady] = useState(false);
@@ -38,10 +46,18 @@ export function SessionChatPage({
   const [clientError, setClientError] = useState<string | null>(null);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
   const controllerRef = useRef<AgentChatController | null>(null);
+  const currentChatIdRef = useRef(chatId);
   const pendingConsumedRef = useRef(false);
+  const provisionalCreateStartedRef = useRef(new Set<string>());
   const settledPendingMessagesRef = useRef(new Set<string>());
+  const isProvisionalChat = isProvisionalChatId(chatId);
+  const router = useRouter();
   const toastError = clientError && dismissedError !== clientError ? clientError : null;
   const isLoadingChat = !activeChat;
+
+  useEffect(() => {
+    currentChatIdRef.current = chatId;
+  }, [chatId]);
 
   useEffect(() => {
     controllerRef.current = null;
@@ -53,6 +69,75 @@ export function SessionChatPage({
     pendingConsumedRef.current = false;
     settledPendingMessagesRef.current = new Set();
   }, [chatId]);
+
+  useEffect(() => {
+    const restoredPendingMessage = readPendingChatMessage(chatId);
+
+    if (restoredPendingMessage) {
+      setPendingUserMessage((current) => current ?? restoredPendingMessage);
+      setClientError(null);
+    }
+  }, [chatId]);
+
+  useEffect(() => {
+    if (!isProvisionalChat || !viewer || !setupStatus.appReady) {
+      return;
+    }
+
+    const pendingMessage = readPendingChatMessage(chatId);
+
+    if (!pendingMessage) {
+      setClientError("Message could not be restored. Start a new chat.");
+      return;
+    }
+
+    setPendingUserMessage((current) => current ?? pendingMessage);
+
+    if (provisionalCreateStartedRef.current.has(chatId)) {
+      return;
+    }
+
+    provisionalCreateStartedRef.current.add(chatId);
+    setClientError(null);
+
+    void (async () => {
+      try {
+        const created = await createChatAction({ pendingUserMessage: pendingMessage });
+
+        if (currentChatIdRef.current !== chatId) {
+          return;
+        }
+
+        writePendingChatMessage(created.id, pendingMessage);
+        clearPendingChatMessage(chatId);
+        touchChat(created);
+        setActiveChatId(created.id);
+        router.replace(`/chat/${created.id}`, { scroll: false });
+      } catch (error) {
+        if (currentChatIdRef.current !== chatId) {
+          return;
+        }
+
+        clearPendingChatMessage(chatId);
+        setPendingUserMessage(null);
+
+        try {
+          window.sessionStorage.setItem("eve-chat-draft", pendingMessage);
+        } catch {}
+
+        setClientError(error instanceof Error ? error.message : "Failed to start chat.");
+        router.replace("/", { scroll: false });
+      }
+    })();
+  }, [
+    chatId,
+    isProvisionalChat,
+    router,
+    setActiveChatId,
+    setupStatus.appReady,
+    touchChat,
+    viewer,
+  ]);
 
   useEffect(() => {
     setActiveChatId(chatId);
@@ -103,7 +188,7 @@ export function SessionChatPage({
   }, [chatId]);
 
   useEffect(() => {
-    if (!viewer || !setupStatus.appReady) {
+    if (!viewer || !setupStatus.appReady || isProvisionalChat) {
       return;
     }
 
@@ -136,12 +221,16 @@ export function SessionChatPage({
         }
 
         setActiveChat(data.chat);
-        setPendingUserMessage(
-          getRestorablePendingUserMessage(
-            data.chat?.pendingUserMessage ?? null,
-            settledPendingMessagesRef.current,
-          ),
+        const nextPendingUserMessage = getRestorablePendingUserMessage(
+          data.chat?.pendingUserMessage ?? null,
+          settledPendingMessagesRef.current,
         );
+
+        setPendingUserMessage(nextPendingUserMessage);
+
+        if (!nextPendingUserMessage) {
+          clearPendingChatMessage(chatId);
+        }
         setClientError(null);
       } catch (error) {
         if (!cancelled && !abortController.signal.aborted) {
@@ -156,7 +245,7 @@ export function SessionChatPage({
       cancelled = true;
       abortController.abort();
     };
-  }, [chatId, setupStatus.appReady, viewer]);
+  }, [chatId, isProvisionalChat, setupStatus.appReady, viewer]);
 
   useEffect(() => {
     if (!viewer) {
@@ -253,6 +342,8 @@ export function SessionChatPage({
   }, []);
 
   const handlePendingUserMessageSettled = useCallback((message?: string) => {
+    clearPendingChatMessage(chatId);
+
     if (message) {
       settledPendingMessagesRef.current.add(message);
     }
@@ -260,7 +351,7 @@ export function SessionChatPage({
     setPendingUserMessage((current) =>
       !message || current === message ? null : current,
     );
-  }, []);
+  }, [chatId]);
 
   const handleActiveChatUpdated = useCallback((nextActiveChat: ActiveChat) => {
     setActiveChat(nextActiveChat);
@@ -297,7 +388,6 @@ export function SessionChatPage({
       <AgentChatSession
         activeChat={activeChat}
         chatId={chatId}
-        isLoadingChat={isLoadingChat}
         key={sessionInstanceKey}
         onActiveChatUpdated={handleActiveChatUpdated}
         onPendingUserMessageSettled={handlePendingUserMessageSettled}

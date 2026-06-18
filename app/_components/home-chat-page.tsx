@@ -2,7 +2,6 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createChatAction } from "@/app/actions/chat";
 import {
   ComposerFooterControls,
   ErrorToast,
@@ -12,6 +11,10 @@ import { useChatShell } from "@/app/_components/chat-shell-context";
 import { ChatComposer } from "@/components/chat/composer";
 import { TemplateFooterLinks } from "@/components/chat/template-footer-links";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
+import {
+  createProvisionalChatId,
+  writePendingChatMessage,
+} from "@/lib/chat/provisional-chat";
 import type { SetupStatus } from "@/lib/chat/types";
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
@@ -25,27 +28,17 @@ export function HomeChatPage() {
     requestSignIn,
     setActiveChatId,
     setupStatus,
-    touchChat,
     viewer,
   } = useChatShell();
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
-  const mountedRef = useRef(false);
   const submittingRef = useRef(false);
   const setupReady = setupStatus.appReady;
   const pathname = usePathname();
   const router = useRouter();
   const toastError = clientError && dismissedError !== clientError ? clientError : null;
-
-  useEffect(() => {
-    mountedRef.current = true;
-
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
 
   useEffect(() => {
     setActiveChatId(null);
@@ -76,7 +69,7 @@ export function HomeChatPage() {
   }, [clientError]);
 
   const handleSubmit = useCallback(
-    async (text: string) => {
+    (text: string) => {
       const message = text.trim();
 
       if (!message || submittingRef.current) {
@@ -109,29 +102,19 @@ export function HomeChatPage() {
       setSubmitting(true);
       setDraft("");
 
-      let shouldResetSubmitting = true;
+      const provisionalChatId = createProvisionalChatId();
+      const didStoreMessage = writePendingChatMessage(provisionalChatId, message);
 
-      try {
-        const created = await createChatAction({ pendingUserMessage: message });
-        const chatPath = `/chat/${created.id}`;
-
-        router.prefetch(chatPath);
-        touchChat(created);
-        setActiveChatId(created.id);
-        router.replace(chatPath, { scroll: false });
-        shouldResetSubmitting = false;
-      } catch (error) {
+      if (!didStoreMessage) {
+        submittingRef.current = false;
+        setSubmitting(false);
         setDraft(message);
-        setClientError(error instanceof Error ? error.message : "Failed to start chat.");
-      } finally {
-        if (shouldResetSubmitting) {
-          submittingRef.current = false;
-
-          if (mountedRef.current) {
-            setSubmitting(false);
-          }
-        }
+        setClientError("Failed to start chat.");
+        return;
       }
+
+      setActiveChatId(provisionalChatId);
+      router.push(`/chat/${provisionalChatId}`, { scroll: false });
     },
     [
       requestSignIn,
@@ -140,7 +123,6 @@ export function HomeChatPage() {
       setupReady,
       setupStatus,
       submitting,
-      touchChat,
       viewer,
     ],
   );

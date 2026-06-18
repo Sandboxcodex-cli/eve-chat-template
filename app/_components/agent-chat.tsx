@@ -13,10 +13,12 @@ import type { EveMessage } from "eve/react";
 import { defaultMessageReducer, useEveAgent } from "eve/react";
 import {
   AlertCircleIcon,
+  CheckIcon,
   ChevronDownIcon,
   ExternalLinkIcon,
   LockIcon,
   PlugIcon,
+  UploadIcon,
   XIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -671,7 +673,6 @@ export function AgentChatSession({
   activeChat,
   chatId,
   emptyComposer,
-  isLoadingChat = false,
   onActiveChatUpdated,
   onPendingUserMessageSettled,
   onControllerChange,
@@ -680,7 +681,6 @@ export function AgentChatSession({
   readonly activeChat: ActiveChat | null;
   readonly chatId?: string | null;
   readonly emptyComposer?: ReactNode;
-  readonly isLoadingChat?: boolean;
   readonly onActiveChatUpdated?: (activeChat: ActiveChat) => void;
   readonly onPendingUserMessageSettled?: (message?: string) => void;
   readonly onControllerChange: (
@@ -691,7 +691,6 @@ export function AgentChatSession({
 }) {
   const {
     activeChatId: shellActiveChatId,
-    desktopSidebarOpen,
     enabledConnections,
     requestSignIn,
     setActiveChatId: setShellActiveChatId,
@@ -1538,11 +1537,7 @@ export function AgentChatSession({
       ) : (
         <>
           {isChatRoute ? (
-            <SessionHeader
-              isDesktopSidebarOpen={desktopSidebarOpen}
-              isLoading={isLoadingChat}
-              title={currentTitle}
-            />
+            <SessionHeader />
           ) : null}
           {isEmpty ? (
             <BlankChatBody />
@@ -2023,31 +2018,58 @@ function ThinkingMessage({ isVisible }: { readonly isVisible: boolean }) {
   );
 }
 
-function SessionHeader({
-  isDesktopSidebarOpen,
-  isLoading,
-  title,
-}: {
-  readonly isDesktopSidebarOpen: boolean;
-  readonly isLoading: boolean;
-  readonly title: string;
-}) {
+function SessionHeader() {
+  const [copied, setCopied] = useState(false);
+  const copyResetTimerRef = useRef<number | null>(null);
+
+  const clearCopyResetTimer = useCallback(() => {
+    if (copyResetTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(copyResetTimerRef.current);
+    copyResetTimerRef.current = null;
+  }, []);
+
+  const handleCopyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      clearCopyResetTimer();
+      setCopied(true);
+      copyResetTimerRef.current = window.setTimeout(() => {
+        copyResetTimerRef.current = null;
+        setCopied(false);
+      }, 1600);
+    } catch {
+      setCopied(false);
+    }
+  }, [clearCopyResetTimer]);
+
+  useEffect(() => clearCopyResetTimer, [clearCopyResetTimer]);
+
   return (
-    <div
-      className={cn(
-        "flex h-12 shrink-0 items-center border-b border-border/70 pr-16 pl-12 md:pr-28",
-        isDesktopSidebarOpen ? "md:pl-4" : "md:pl-12",
-      )}
-    >
-      {isLoading ? (
-        <div
-          aria-label="Loading chat title"
-          className="h-5 w-48 max-w-[50vw] animate-pulse rounded-md bg-muted/25"
-          data-chat-title-skeleton
-        />
-      ) : (
-        <h1 className="truncate text-base font-medium tracking-tight">{title}</h1>
-      )}
+    <div className="relative h-12 shrink-0">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            aria-label={copied ? "Copied chat link" : "Copy chat link"}
+            className="absolute top-2 right-3 text-muted-foreground hover:text-foreground"
+            onClick={handleCopyLink}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+          >
+            {copied ? (
+              <CheckIcon className="size-4" />
+            ) : (
+              <UploadIcon className="size-4" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {copied ? "Copied" : "Copy link"}
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }
